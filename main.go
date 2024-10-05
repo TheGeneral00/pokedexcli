@@ -1,12 +1,13 @@
 package main
 
 import (
-    "fmt";
-    "bufio";
-    "os";
-    "net/http";
-    "encoding/json";
-    "io"
+	"bufio";
+	"encoding/json";
+	"fmt";
+	"io";
+	"net/http";
+	"os";
+	"github.com/TheGeneral00/pokedexcli/internal"
 )
 
 
@@ -17,6 +18,7 @@ type cliCommand struct {
 }
 
 type config struct {
+    cache *pokeCache.Cache
     prev string
     next string
 }
@@ -61,13 +63,13 @@ func getCommands() map[string]cliCommand {
     }
 }
 
-func commandExit(config *config) error {
+func commandExit(*config) error {
     fmt.Println("Exiting program")
     os.Exit(0)
     return nil
 }
 
-func commandHelp(config *config) error {
+func commandHelp(*config) error {
     commands := getCommands()
     fmt.Println("Welcome to the Pokedex!\n\nUsage:\n")
     for name, content := range commands {
@@ -90,15 +92,22 @@ func commandMap(config *config) error {
         return fmt.Errorf("Response failed with status code: %d", res.StatusCode)
     }
     var response Response
-    dec := json.NewDecoder(res.Body)
-    if err := dec.Decode(&response); err != nil {
-        return fmt.Errorf("Failed with error: %v", err)
+    rawByteSlice, err := io.ReadAll(res.Body)
+    if err != nil {
+        return fmt.Errorf("Failed reading response Body to byte slice with error: %v", err)
+    }
+    err = json.Unmarshal(rawByteSlice, &response)
+    if err != nil {
+        return fmt.Errorf("Failed unmarshaling response with error: %v", err)
     }
     for _, location := range response.Results {
         fmt.Println(location.Name)
     }
+    
     config.next = response.Next
-    config.prev = response.Previous
+    config.prev = res.Request.URL.String()
+    config.cache.Add(res.Request.URL.String(), rawByteSlice)
+    fmt.Println("Storing URL:", res.Request.URL.String()) 
     return nil
 }
 
@@ -106,19 +115,33 @@ func commandMapB(config *config) error {
     if config.prev == "" {
         return fmt.Errorf("There are no locations to go back to")
     }
-    res, err := http.Get(config.prev)
-    if err != nil {
-       return fmt.Errorf("Locations couldn't be displayed with error: %v", err)
-    }
-    defer res.Body.Close()
-    if res.StatusCode > 299 {
-        return fmt.Errorf("Response failed with status code: %d", res.StatusCode)
-    }
+    fmt.Printf("Requested URL: %v\n", config.prev)
     var response Response
-    dec := json.NewDecoder(res.Body)
-    if err := dec.Decode(&response); err != nil {
-        return fmt.Errorf("Failed with error: %v", err)
+    if val, ok := config.cache.Get(config.prev); ok {
+        err := json.Unmarshal(val, &response)    
+        if err != nil {
+            return fmt.Errorf("Failed to unmarshal the raw byte val from cache with error: %v", err)
+        }
+    } else {
+        res, err := http.Get(config.prev)
+        defer res.Body.Close()
+        if err != nil {
+            return fmt.Errorf("Response failed with error: %v", err)
+        }
+        if res.StatusCode > 299 {
+            return fmt.Errorf("Response failed with status code: %d", res.StatusCode)
+        }
+        rawByteBody, err := io.ReadAll(res.Body)
+        if err != nil {
+            return fmt.Errorf("Failed to readd responde body with error: %v", err)
+        }
+        err = json.Unmarshal(rawByteBody, &response)
+        if err != nil {
+            return fmt.Errorf("Failed to unmarshal rawByteBody with error: %v", err)
+        }
+        config.cache.Add(res.Request.URL.String(), rawByteBody)
     }
+    
     for _, location := range response.Results {
         fmt.Println(location.Name)
     }
@@ -140,6 +163,7 @@ func printResponse(config *config) error {
     if err != nil {
         return fmt.Errorf("Reading of response body failed")
     }
+    fmt.Printf("%s", res.Request.URL.String())
     fmt.Printf("%s\n", string(bodyBytes))
     return nil
 }
@@ -147,6 +171,8 @@ func printResponse(config *config) error {
 func main() {
     scanner := bufio.NewScanner(os.Stdin)
     var config config
+    // .NewCache returns pointer to the created cache!
+    config.cache = pokeCache.NewCache(60)
     commands := getCommands()
     for {
         fmt.Printf("pokedex > ")
@@ -166,9 +192,5 @@ func main() {
                 fmt.Printf("%v is not a valid command", scanner.Text())
             }    
         }
-         
-    }
-    if err := scanner.Err(); err != nil {
-        fmt.Fprintln(os.Stderr, "reading standard input:", err)
     }
 }
