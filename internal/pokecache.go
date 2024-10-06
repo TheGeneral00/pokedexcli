@@ -29,13 +29,14 @@ func NewCache(interval int) *Cache {
 func (c *Cache) Add(key string, val []byte) error {
     c.mu.Lock()
     defer c.mu.Unlock()
-    if _, ok := c.Entries[key]; !ok {
+    if _, ok := c.Entries[key]; ok {
         return fmt.Errorf("The key %v already exists in the Cache.", key)
     }
-    var cacheEntry cacheEntry
-    cacheEntry.createdAt = time.Now()
-    cacheEntry.val = val
-    c.Entries[key] = cacheEntry 
+    entry := cacheEntry{
+        createdAt:  time.Now(),
+        val:        val,
+    }
+    c.Entries[key] = entry
     return nil 
 }
 
