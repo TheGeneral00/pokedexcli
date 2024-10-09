@@ -47,7 +47,6 @@ func (c *Cache) Get(key string) ([]byte, bool) {
     defer c.mu.Unlock()
     entry, ok := c.Entries[key]
     if !ok {
-        fmt.Println("No Cache entry under the given key.")
         return nil, false
     }
     return entry.val, true

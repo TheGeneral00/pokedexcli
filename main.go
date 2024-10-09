@@ -234,26 +234,34 @@ func printResponse(config *config) error {
 
 func commandExplore(config *config) error {
     fmt.Printf("Exploring %v\n", config.exploringArea)
-    res, err := http.Get("https://pokeapi.co/api/v2/location-area" + config.exploringArea)
-    if err != nil {
-        return fmt.Errorf("Request failed with error: %v", err)
-    }
-    defer res.Body.Close()
+    locationURL := "https://pokeapi.co/api/v2/location-area/" + config.exploringArea 
     var response exploreResponse
-    rawByteBody, err := io.ReadAll(res.Body)
-    if err != nil {
-        return fmt.Errorf("Failed to read response body with error: %v", err)
-    }
-    err = json.Unmarshal(rawByteBody, &response)
-    if err != nil {
-        return fmt.Errorf("Failed to unmarshal the response body with err: %v", err)
+    if entry, ok := config.cache.Get(locationURL); ok {
+        err := json.Unmarshal(entry, &response)    
+        if err != nil {
+            return fmt.Errorf("Failed to unmarshal the raw byte val from cache with error: %v", err)
+        } 
+    } else {
+        res, err := http.Get(locationURL)
+        if err != nil {
+            return fmt.Errorf("Request failed with error: %v", err)
+        }
+        defer res.Body.Close()
+        rawByteBody, err := io.ReadAll(res.Body)
+        if err != nil {
+            return fmt.Errorf("Failed to read response body with error: %v", err)
+            }
+        err = json.Unmarshal(rawByteBody, &response)
+        if err != nil {
+            return fmt.Errorf("Failed to unmarshal the response body with err: %v", err)
+        }
+        config.cache.Add(res.Request.URL.String(), rawByteBody)
     }
     for _, encounter := range response.PokemonEncounters {
         fmt.Printf(" - %v\n", encounter.Pokemon.Name)
     } 
-    config.cache.Add(res.Request.URL.String(), rawByteBody)
     return nil 
-}
+    }
 
 func main() {
     scanner := bufio.NewScanner(os.Stdin)
