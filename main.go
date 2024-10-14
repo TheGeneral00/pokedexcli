@@ -20,11 +20,12 @@ type cliCommand struct {
 }
 
 type config struct {
-    cache *pokeCache.Cache
+    cache *internal.Cache
+    pokedex *internal.Pokedex
     prev string
     next string
     current string
-    exploringArea string
+    additionalInput string
 }
 
 type Response struct {
@@ -52,7 +53,7 @@ type exploreResponse struct {
 				Name string `json:"name"`
 				URL  string `json:"url"`
 			} `json:"version"`
-		} `json:"version_details"`
+		} `json:"version_detail•••••••••••••••••••s"`
 	} `json:"encounter_method_rates"`
 	Location struct {
 		Name string `json:"name"`
@@ -121,6 +122,11 @@ func getCommands() map[string]cliCommand {
             name:           "explore",
             description:    "Shows the pokemon located in the area",
             callback:       commandExplore,
+        },
+        "catch":    {
+            name:           "catch",
+            description:    "Allows you to try to catch the pokemon discovered by exploring the area",
+            callback:       commandCatch,
         },
     }
 }
@@ -233,8 +239,8 @@ func printResponse(config *config) error {
 }
 
 func commandExplore(config *config) error {
-    fmt.Printf("Exploring %v\n", config.exploringArea)
-    locationURL := "https://pokeapi.co/api/v2/location-area/" + config.exploringArea 
+    fmt.Printf("Exploring %v\n", config.additionalInput)
+    locationURL := "https://pokeapi.co/api/v2/location-area/" + config.additionalInput 
     var response exploreResponse
     if entry, ok := config.cache.Get(locationURL); ok {
         err := json.Unmarshal(entry, &response)    
@@ -261,7 +267,48 @@ func commandExplore(config *config) error {
         fmt.Printf(" - %v\n", encounter.Pokemon.Name)
     } 
     return nil 
+}
+
+func commandCatch(config *config) error {
+    fmt.Printf("Throwing a Pokeball at /%v/ ...\n", config.additionalInput)
+    pokemonURL := "https://pokeapi.co/api/v2/pokemon/" + config.additionalInput 
+    rawLocation, _ := config.cache.Get(config.current)
+    var location exploreResponse
+    err := json.Unmarshal(rawLocation, &location)
+    if err != nil {
+        return fmt.Errorf("Failed to unmarshal cached data with error: %v", err)
     }
+    localPokemon := false
+    for _, encounter := range location.PokemonEncounters {
+        if encounter.Pokemon.Name == config.additionalInput {
+            localPokemon = true
+        }
+    }
+
+    if !localPokemon {
+        return fmt.Errorf("%v is not present in the area", config.additionalInput)
+    }  
+    if _, ok := config.pokedex.Entries[config.additionalInput]; ok{
+        return fmt.Errorf("%v has allready been caught", config.additionalInput)
+    } else {
+        res, err := http.Get(pokemonURL)
+        if err != nil {
+            return fmt.Errorf("Request failed with error: %v", err)
+        }
+        defer res.Body.Close()
+        rawBytePokemon, err := io.ReadAll(res.Body)
+        if err != nil {
+            return fmt.Errorf("Failed to read response body with error: %v", err)
+        }
+        var pokemon internal.Pokemon
+        err = json.Unmarshal(rawBytePokemon, &pokemon)
+        if err != nil {
+            return fmt.Errorf("Failed to unmarshal with error: %v", err)
+        }
+        config.pokedex.Add(pokemon)
+    }
+    return nil 
+}
 
 func main() {
     scanner := bufio.NewScanner(os.Stdin)
@@ -270,29 +317,21 @@ func main() {
         next: "",
     }
     // .NewCache returns pointer to the created cache!
-    config.cache = pokeCache.NewCache(60)
+    config.cache = internal.NewCache(60)
+    config.pokedex = internal.NewPokedex()
     commands := getCommands()
     for {
         fmt.Printf("pokedex > ")
         if scanner.Scan() {
             input := strings.Split(scanner.Text(), " ")
             if len(input) > 1{
-                config.exploringArea = input[1]
+                config.additionalInput = strings.TrimSpace(input[1])
             }
-            switch input[0] {
-            case "help":
-                commands["help"].callback(&config)
-            case "exit":
-                commands["exit"].callback(&config)
-            case "map":
-                commands["map"].callback(&config)
-            case "mapb":
-                commands["mapb"].callback(&config)
-            case "printResponse":
-                commands["printResponse"].callback(&config)
-            case "explore":
-                commands["explore"].callback(&config)
-            default:
+            if _, ok := commands[input[0]]; ok {
+                if err := commands[input[0]].callback(&config); err != nil {
+                    fmt.Printf("%v\n", err)
+                }
+            } else {
                 fmt.Printf("%v is not a valid command", scanner.Text())
             }    
         }
