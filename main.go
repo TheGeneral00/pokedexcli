@@ -129,6 +129,16 @@ func getCommands() map[string]cliCommand {
             description:    "Allows you to try to catch the pokemon discovered by exploring the area",
             callback:       commandCatch,
         },
+        "inspect":  {
+            name:           "inspect",
+            description:    "Gives detailed information about the pokemon in your pokedex",
+            callback:       commandInspect,
+        },
+        "pokedex":  {
+            name:           "pokedex",
+            description:    "Lists all your caught pokemon",
+            callback:       commandPokedex,
+        },
     }
 }
 
@@ -312,6 +322,30 @@ func commandCatch(config *config) error {
     return nil 
 }
 
+func commandInspect(config *config) error {
+    pokemon, err := config.pokedex.Get(config.additionalInput)
+    if err != nil {
+        return err
+    }
+    fmt.Printf("%v: %v\n", "Name", pokemon.Name)
+    fmt.Printf("%v: %v\n", "Height", pokemon.Height)
+    fmt.Printf("%v: %v\n", "Weight", pokemon.Weight)
+    fmt.Printf("%v:\n", "Stats")
+    for _, stat := range pokemon.Stats {
+        fmt.Printf("    - %v: %v\n", stat.Stat.Name, stat.BaseStat)
+    }
+    fmt.Printf("%v:\n", "Types")
+    for _, pokeType := range pokemon.Types {
+        fmt.Printf("    - %v\n", pokeType.Type.Name)
+    }
+    return nil
+}
+
+func commandPokedex(config *config) error {
+    fmt.Println("Your Pokedex:")
+    return config.pokedex.Show() 
+}
+
 func main() {
     scanner := bufio.NewScanner(os.Stdin)
     config := config{
@@ -334,7 +368,7 @@ func main() {
                     fmt.Printf("%v\n", err)
                 }
             } else {
-                fmt.Printf("%v is not a valid command", scanner.Text())
+                fmt.Printf("%v is not a valid command\n", scanner.Text())
             }    
         }
     }
