@@ -25,6 +25,7 @@ type config struct {
     prev string
     next string
     current string
+    currentLocation string
     additionalInput string
 }
 
@@ -53,7 +54,7 @@ type exploreResponse struct {
 				Name string `json:"name"`
 				URL  string `json:"url"`
 			} `json:"version"`
-		} `json:"version_detail•••••••••••••••••••s"`
+		} `json:"version_details"`
 	} `json:"encounter_method_rates"`
 	Location struct {
 		Name string `json:"name"`
@@ -265,14 +266,15 @@ func commandExplore(config *config) error {
     }
     for _, encounter := range response.PokemonEncounters {
         fmt.Printf(" - %v\n", encounter.Pokemon.Name)
-    } 
+    }
+    config.currentLocation = locationURL
     return nil 
 }
 
 func commandCatch(config *config) error {
-    fmt.Printf("Throwing a Pokeball at /%v/ ...\n", config.additionalInput)
+    fmt.Printf("Throwing a Pokeball at %v ...\n", config.additionalInput)
     pokemonURL := "https://pokeapi.co/api/v2/pokemon/" + config.additionalInput 
-    rawLocation, _ := config.cache.Get(config.current)
+    rawLocation, _ := config.cache.Get(config.currentLocation)
     var location exploreResponse
     err := json.Unmarshal(rawLocation, &location)
     if err != nil {
